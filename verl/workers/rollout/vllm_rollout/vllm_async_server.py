@@ -81,6 +81,7 @@ _VLLM_VERSION = version.parse(vllm.__version__)
 # vLLM args that verl sets from its own config, and the config that controls each one.
 # rollout.engine_kwargs.vllm passes everything else through but may not set these.
 _VERL_MANAGED_VLLM_ARGS = {
+    "pipeline_parallel_size": "rollout.pipeline_model_parallel_size",
     "tensor_parallel_size": "rollout.tensor_model_parallel_size",
     "data_parallel_size": "rollout.data_parallel_size",
     "enable_expert_parallel": "rollout.expert_parallel_size (= tensor_model_parallel_size * data_parallel_size)",
@@ -207,11 +208,9 @@ class vLLMHttpServer:
         # `ranks` in the rollout profiler config are global GPU ranks (as in the training roles);
         # map them to the replica that owns them so e.g. ranks=[0, 8] with tp=8 profiles the replicas
         # holding global ranks 0 and 8 (replicas 0 and 1), not replica indices 0 and 8.
-        self.replica_world_size = (
-            self.config.tensor_model_parallel_size
-            * self.config.data_parallel_size
-            * self.config.pipeline_model_parallel_size
-        )
+        from verl.workers.config.rollout import rollout_replica_world_size
+
+        self.replica_world_size = rollout_replica_world_size(self.config)
         self.profiler_controller = build_rollout_dist_profiler(
             self.replica_rank, self.replica_world_size, config=profiler_config, tool_config=tool_config
         )
@@ -364,6 +363,7 @@ class vLLMHttpServer:
             "gpu_memory_utilization": self.config.gpu_memory_utilization,
             "disable_log_stats": self.config.disable_log_stats,
             "tensor_parallel_size": self.config.tensor_model_parallel_size,
+            "pipeline_parallel_size": self.config.pipeline_model_parallel_size,
             "seed": self.replica_rank + self.config.seed,
             "override_generation_config": json.dumps(override_generation_config),
             "hf_overrides": hf_overrides,
@@ -757,7 +757,8 @@ class vLLMHttpServer:
         )
         token_ids = final_res.outputs[0].token_ids
         log_probs = None
-        if sampling_params.logprobs:
+        # logprobs=-1 asks vLLM for the complete vocabulary, not a top-k head.
+        if sampling_params.logprobs is not None and sampling_params.logprobs > 0:
             # indexing FlatLogprobs per position would rebuild a k+1 dict per token
             (
                 log_probs,
@@ -1583,7 +1584,21 @@ class vLLMReplica(RolloutReplica):
         super().__init__(
             replica_rank, config, model_config, gpus_per_node, is_reward_model, is_teacher_model, name_suffix
         )
-        self.server_class = ray.remote(vLLMHttpServer)
+        self.server_class = ray.remote(self._resolve_server_class())
+
+    def _resolve_server_class(self) -> type:
+        """vLLMHttpServer, or the subclass named by ``rollout.agent.custom_async_server``."""
+        custom = self.config.agent.custom_async_server
+        if not custom.path and not custom.name:
+            return vLLMHttpServer
+        if not custom.path or not custom.name:
+            raise ValueError("rollout.agent.custom_async_server needs both path and name")
+        from verl.utils.import_utils import load_extern_object
+
+        server_class = load_extern_object(custom.path, custom.name)
+        if not isinstance(server_class, type) or not issubclass(server_class, vLLMHttpServer):
+            raise TypeError(f"{custom.path}:{custom.name} must be a vLLMHttpServer subclass")
+        return server_class
 
     async def launch_servers(self):
         """Launch http server in each node."""

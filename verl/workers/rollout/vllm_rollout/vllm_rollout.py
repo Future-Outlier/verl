@@ -78,7 +78,14 @@ class ServerAdapter(BaseRollout):
         else:
             decode_tp = prefill_tp
             per_replica = prefill_tp
-        rollout_world_size = per_replica * self.config.data_parallel_size * self.config.pipeline_model_parallel_size
+        from verl.workers.config.rollout import rollout_context_parallel_size
+
+        rollout_world_size = (
+            per_replica
+            * self.config.data_parallel_size
+            * self.config.pipeline_model_parallel_size
+            * rollout_context_parallel_size(self.config)
+        )
         if replica_rank == -1:
             self.replica_rank = rank // rollout_world_size
         else:

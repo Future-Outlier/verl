@@ -449,11 +449,9 @@ class LLMServerManager:
         """
         if start_rank is None:
             start_rank = self.start_rank
-        rollout_world_size = (
-            self.rollout_config.tensor_model_parallel_size
-            * self.rollout_config.data_parallel_size
-            * self.rollout_config.pipeline_model_parallel_size
-        )
+        from verl.workers.config.rollout import rollout_replica_world_size
+
+        rollout_world_size = rollout_replica_world_size(self.rollout_config)
         # PD inflates per-replica footprint; miss this and init_hybrid slices
         # past worker_group → empty workers on replica_rank>=1.
         disagg = getattr(self.rollout_config, "disaggregation", None)

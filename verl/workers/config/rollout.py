@@ -359,7 +359,8 @@ class RolloutConfig(BaseConfig):
                 )
 
         if self.pipeline_model_parallel_size > 1:
-            if self.name == "vllm" or self.name == "sglang" or self.name == "trtllm":
+            # vLLM runs pipeline stages with its multiprocessing executor inside one replica.
+            if self.name == "sglang" or self.name == "trtllm":
                 raise NotImplementedError(
                     f"Current rollout {self.name=} not implemented pipeline_model_parallel_size > 1 yet."
                 )
@@ -403,3 +404,27 @@ class RolloutConfig(BaseConfig):
                 )
             vllm_kwargs = self.engine_kwargs.setdefault("vllm", {})
             vllm_kwargs["max_logprobs"] = max(vllm_kwargs.get("max_logprobs", 0), self.topk_log_probs)
+
+
+def rollout_context_parallel_size(config) -> int:
+    """Prefill context-parallel ranks per vLLM replica, passed through ``engine_kwargs.vllm``.
+
+    vLLM places TP x PP x PCP workers in each data-parallel engine, so a replica's GPU count
+    includes this factor. Decode context parallelism reuses those ranks and adds none.
+    """
+    engine_kwargs = getattr(config, "engine_kwargs", None) or {}
+    vllm_kwargs = engine_kwargs.get("vllm", None) if hasattr(engine_kwargs, "get") else None
+    value = (vllm_kwargs or {}).get("prefill_context_parallel_size", 1) or 1
+    if int(value) != value or int(value) < 1:
+        raise ValueError(f"prefill_context_parallel_size must be a positive integer, got {value!r}")
+    return int(value)
+
+
+def rollout_replica_world_size(config) -> int:
+    """GPUs in one rollout replica: TP x DP x PP x prefill context parallel."""
+    return (
+        config.tensor_model_parallel_size
+        * config.data_parallel_size
+        * config.pipeline_model_parallel_size
+        * rollout_context_parallel_size(config)
+    )

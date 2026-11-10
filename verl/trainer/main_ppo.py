@@ -141,7 +141,10 @@ class TaskRunnerV1:
         import transfer_queue as tq
 
         from verl.trainer.ppo.v1 import get_trainer_cls
+        from verl.utils.import_utils import import_external_libs
 
+        # External libraries may register trainers (register_trainer) as well as models and engines.
+        import_external_libs(config.actor_rollout_ref.model.get("external_lib", None))
         trainer_cls = get_trainer_cls(config.trainer.v1.trainer_mode)
 
         config.transfer_queue.enable = True

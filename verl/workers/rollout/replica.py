@@ -99,11 +99,9 @@ class RolloutReplica(ABC):
         self.config: RolloutConfig = omega_conf_to_dataclass(config)
         self.model_config: HFModelConfig = model_config
 
-        self.world_size = (
-            self.config.tensor_model_parallel_size
-            * self.config.data_parallel_size
-            * self.config.pipeline_model_parallel_size
-        )
+        from verl.workers.config.rollout import rollout_replica_world_size
+
+        self.world_size = rollout_replica_world_size(self.config)
         self.gpus_per_node = gpus_per_node
         self.gpus_per_replica_node = min(gpus_per_node, self.world_size)
         assert self.world_size % self.gpus_per_replica_node == 0, (
