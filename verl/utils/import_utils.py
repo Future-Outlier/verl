@@ -79,9 +79,11 @@ def is_msprobe_available():
 
 
 def import_external_libs(external_libs=None):
+    from omegaconf import ListConfig
+
     if external_libs is None:
         return
-    if not isinstance(external_libs, list):
+    if not isinstance(external_libs, (list, tuple, ListConfig)):
         external_libs = [external_libs]
 
     for external_lib in external_libs:
