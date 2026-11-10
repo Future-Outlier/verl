@@ -527,3 +527,11 @@ ray_kwargs:
 
   # Path to save Ray timeline JSON for performance profiling
   timeline_json_file: null
+
+# Optional IsoExec integration (requires the isoexec package). true selects IsoExec's Megatron engine,
+# vLLM Model Runner V2 server and isoexec_sync trainer together, plus the settings they require; see
+# isoexec.integrations.verl.config.
+isoexec:
+
+  # Whether to run the IsoExec integration
+  enable: false

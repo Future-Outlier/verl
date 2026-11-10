@@ -180,6 +180,12 @@ def main(config):
     # Automatically set `config.trainer.device = npu` when running on Ascend NPU.
     auto_set_device(config)
 
+    # Optional IsoExec integration: one switch expands into its engine, rollout server and trainer settings.
+    if config.get("isoexec", {}).get("enable", False):
+        from isoexec.integrations.verl.config import apply as apply_isoexec
+
+        apply_isoexec(config)
+
     # validate config
     validate_config(
         config=config,
